@@ -2,17 +2,19 @@ import React, { useState } from 'react';
 import { Transaction } from '@mysten/sui/transactions';
 import { useCurrentAccount, useSignAndExecuteTransaction, useSuiClient } from '@mysten/dapp-kit';
 import { ConnectButton } from '@mysten/dapp-kit';
-import { Box, Button, Card, Container, Flex, Heading, Text, TextField } from '@radix-ui/themes';
+import { Box, Button, Card, Container, Flex, Heading, Text } from '@radix-ui/themes';
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
+import { PACKAGE_ID } from './constants';
+import CryptoJS from 'crypto-js';
 
 function HomePage() {
+    console.log('Rendering HomePage');
     return (
         <Card>
             <Flex direction="column" gap="3" align="center" p="4">
-                <Heading size="5">ZkDocLock Example</Heading>
+                <Heading size="5">ZkDocLock</Heading>
                 <Text align="center">
-                    Đây là một ứng dụng demo cho ZkDocLock, cho phép seller tạo record với dữ liệu mã hóa trên Walrus,
-                    quản lý danh sách truy cập, và buyer yêu cầu quyền truy cập vào dữ liệu.
+                    Ứng dụng demo cho ZkDocLock, cho phép seller upload dữ liệu lên Walrus và lưu metadata trên blockchain.
                 </Text>
                 <Link to="/zkdoclock">
                     <Button size="3">Thử ngay</Button>
@@ -23,27 +25,23 @@ function HomePage() {
 }
 
 function ZkDocLockApp() {
+    console.log('Rendering ZkDocLockApp');
     const suiClient = useSuiClient();
     const currentAccount = useCurrentAccount();
     const { mutate: signAndExecute } = useSignAndExecuteTransaction();
 
-    // State cho việc tạo record
-    const [blobId, setBlobId] = useState('');
-    const [hash, setHash] = useState('');
-    const [proof, setProof] = useState('');
-    const [pvkBytes, setPvkBytes] = useState('');
-    const [publicInputsBytes, setPublicInputsBytes] = useState('');
-    const [buyers, setBuyers] = useState<string[]>([]);
-    const [recordId, setRecordId] = useState('');
-
-    // State cho việc thêm buyer
-    const [newBuyerAddress, setNewBuyerAddress] = useState('');
-
-    // State cho việc yêu cầu truy cập
-    const [buyerPublicKey, setBuyerPublicKey] = useState('');
-
-    // State để hiển thị trạng thái giao dịch
+    // State cho việc upload record
+    const [file, setFile] = useState<File | null>(null);
+    const [metadata, setMetadata] = useState('');
+    const [isUploading, setIsUploading] = useState(false);
     const [txStatus, setTxStatus] = useState<string | null>(null);
+    const [records, setRecords] = useState<{
+        blobId: string;
+        metadata: string;
+        hash: string;
+        timestamp: number;
+        fileType: string;
+    }[]>([]);
 
     if (!currentAccount) {
         return (
@@ -53,163 +51,177 @@ function ZkDocLockApp() {
         );
     }
 
-    // Hàm tạo record
-    const handleCreateRecord = () => {
-        const tx = new Transaction();
-        tx.moveCall({
-            target: '0xYOUR_PACKAGE_ID::zk_doc_lock::create_record',
-            arguments: [
-                tx.pure.vector('u8', blobId.split(',').map(Number)),
-                tx.pure.vector('u8', hash.split(',').map(Number)),
-                tx.pure.vector('u8', proof.split(',').map(Number)),
-                tx.pure.vector('u8', pvkBytes.split(',').map(Number)),
-                tx.pure.vector('u8', publicInputsBytes.split(',').map(Number)),
-                tx.pure.vector('address', buyers),
-            ],
-        });
-        tx.setGasBudget(10000000);
-        signAndExecute(
-            { transaction: tx },
-            {
-                onSuccess: (result) => {
-                    setTxStatus(`Record đã được tạo thành công: ${result.digest}`);
-                    // Giả sử digest có thể dùng để lấy recordId trong thực tế
-                    setRecordId(result.digest); // Điều chỉnh theo cách lấy ID thực tế
-                },
-                onError: (error) => setTxStatus(`Lỗi khi tạo record: ${error.message}`),
+    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const selectedFile = event.target.files?.[0] || null;
+        if (selectedFile) {
+            if (selectedFile.size > 10 * 1024 * 1024) {
+                alert('File size must be less than 10 MiB');
+                return;
             }
-        );
+            const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+            if (!allowedTypes.includes(selectedFile.type)) {
+                alert('Chỉ hỗ trợ file ảnh (JPEG, PNG) hoặc PDF');
+                return;
+            }
+            setFile(selectedFile);
+        }
     };
 
-    // Hàm thêm buyer vào danh sách truy cập
-    const handleAddToAccessList = () => {
-        const tx = new Transaction();
-        tx.moveCall({
-            target: '0xYOUR_PACKAGE_ID::zk_doc_lock::add_to_access_list',
-            arguments: [
-                tx.object(recordId),
-                tx.pure.address(newBuyerAddress),
-            ],
-        });
-        tx.setGasBudget(10000000);
-        signAndExecute(
-            { transaction: tx },
-            {
-                onSuccess: (result) => setTxStatus(`Buyer đã được thêm: ${result.digest}`),
-                onError: (error) => setTxStatus(`Lỗi khi thêm buyer: ${error.message}`),
-            }
-        );
+    const handleUploadRecord = async () => {
+        if (!file || !metadata) {
+            alert('Vui lòng chọn file và nhập metadata');
+            return;
+        }
+        setIsUploading(true);
+        try {
+            const reader = new FileReader();
+            reader.onload = async (event) => {
+                if (event.target?.result instanceof ArrayBuffer) {
+                    console.log('1. File read successfully');
+                    const data = new Uint8Array(event.target.result);
+
+                    // Tính hash của dữ liệu
+                    const hash = CryptoJS.SHA256(CryptoJS.lib.WordArray.create(data)).toString();
+                    console.log('2. Hash calculated:', hash);
+
+                    // Upload lên Walrus
+                    console.log('3. Starting upload to Walrus');
+                    const response = await fetch('https://publisher.walrus-testnet.walrus.space/v1/blobs?epochs=1', {
+                        method: 'PUT',
+                        body: data,
+                    });
+                    console.log('4. Response from Walrus:', response.status);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const result = await response.json();
+                    console.log('5. Result:', result);
+                    let blobId;
+                    if (result.newlyCreated) {
+                        blobId = result.newlyCreated.blobObject.blobId;
+                    } else if (result.alreadyCertified) {
+                        blobId = result.alreadyCertified.blobId;
+                    } else {
+                        throw new Error('Unexpected response structure');
+                    }
+                    console.log('6. blobId:', blobId);
+
+                    // Lấy timestamp và fileType
+                    const timestamp = Date.now();
+                    const fileType = file.type || 'unknown';
+                    console.log('7. File type:', fileType);
+
+                    // Lưu record vào state
+                    setRecords([...records, { blobId, metadata, hash, timestamp, fileType }]);
+
+                    // Gọi smart contract
+                    console.log('8. Calling smart contract to create record');
+                    const tx = new Transaction();
+                    tx.moveCall({
+                        target: `${PACKAGE_ID}::zk_doc_lock::create_record`,
+                        arguments: [
+                            tx.pure.vector('u8', Array.from(new TextEncoder().encode(blobId))),
+                            tx.pure.vector('u8', Array.from(hexToBytes(hash))),
+                            tx.pure.vector('u8', []), // proof
+                            tx.pure.vector('u8', []), // pvk_bytes
+                            tx.pure.vector('u8', []), // public_inputs_bytes
+                            tx.pure.vector('address', []), // initial_allowlist
+                        ],
+                    });
+                    tx.setGasBudget(10000000);
+                    signAndExecute(
+                        { transaction: tx },
+                        {
+                            onSuccess: (result) => {
+                                console.log('9. Record uploaded to blockchain:', result);
+                                const createdObject = result.effects?.created?.find(
+                                    (item) => item.owner && typeof item.owner === 'object' && 'Owned' in item.owner
+                                );
+                                const recordId = createdObject?.reference?.objectId || result.digest;
+                                setTxStatus(`Record đã được tạo thành công: ${result.digest}, Record ID: ${recordId}`);
+                            },
+                            onError: (error) => {
+                                console.error('10. Error uploading to blockchain:', error);
+                                setTxStatus(`Lỗi khi upload lên blockchain: ${error.message}`);
+                            },
+                        }
+                    );
+                    setIsUploading(false);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        } catch (error) {
+            console.error('Error during upload:', error);
+            setTxStatus(`Lỗi khi upload lên Walrus: ${error.message}`);
+            setIsUploading(false);
+        }
     };
 
-    // Hàm yêu cầu truy cập
-    const handleRequestAccess = () => {
-        const tx = new Transaction();
-        tx.moveCall({
-            target: '0xYOUR_PACKAGE_ID::zk_doc_lock::request_access',
-            arguments: [
-                tx.object(recordId),
-                tx.pure.vector('u8', buyerPublicKey.split(',').map(Number)),
-            ],
-        });
-        tx.setGasBudget(10000000);
-        signAndExecute(
-            { transaction: tx },
-            {
-                onSuccess: (result) => setTxStatus(`Yêu cầu truy cập đã được gửi: ${result.digest}`),
-                onError: (error) => setTxStatus(`Lỗi khi gửi yêu cầu: ${error.message}`),
-            }
-        );
-    };
+    // Hàm chuyển hex string thành bytes
+    function hexToBytes(hex: string): Uint8Array {
+        const bytes = new Uint8Array(hex.length / 2);
+        for (let i = 0; i < hex.length; i += 2) {
+            bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+        }
+        return bytes;
+    }
 
     return (
         <Container size="3" p="4">
             <Flex direction="column" gap="4">
-                {/* Phần tạo record */}
+                {/* Phần upload record */}
                 <Card>
                     <Flex direction="column" gap="3" p="4">
-                        <Heading size="4">Tạo Record</Heading>
-                        <TextField.Input
-                            placeholder="Blob ID (phân tách bằng dấu phẩy)"
-                            value={blobId}
-                            onChange={(e) => setBlobId(e.target.value)}
+                        <Heading size="4">Upload Record</Heading>
+                        <input type="file" onChange={handleFileChange} accept="image/jpeg,image/png,application/pdf" />
+                        <input
+                            placeholder="Metadata (miêu tả dữ liệu)"
+                            value={metadata}
+                            onChange={(e) => setMetadata(e.target.value)}
+                            style={{ padding: '8px', margin: '4px 0' }}
                         />
-                        <TextField.Input
-                            placeholder="Hash (phân tách bằng dấu phẩy)"
-                            value={hash}
-                            onChange={(e) => setHash(e.target.value)}
-                        />
-                        <TextField.Input
-                            placeholder="Proof (phân tách bằng dấu phẩy)"
-                            value={proof}
-                            onChange={(e) => setProof(e.target.value)}
-                        />
-                        <TextField.Input
-                            placeholder="PVK Bytes (phân tách bằng dấu phẩy)"
-                            value={pvkBytes}
-                            onChange={(e) => setPvkBytes(e.target.value)}
-                        />
-                        <TextField.Input
-                            placeholder="Public Inputs Bytes (phân tách bằng dấu phẩy)"
-                            value={publicInputsBytes}
-                            onChange={(e) => setPublicInputsBytes(e.target.value)}
-                        />
-                        <TextField.Input
-                            placeholder="Danh sách buyer ban đầu (địa chỉ, phân tách bằng dấu phẩy)"
-                            value={buyers.join(',')}
-                            onChange={(e) => setBuyers(e.target.value.split(','))}
-                        />
-                        <Button onClick={handleCreateRecord}>Tạo Record</Button>
+                        <Button onClick={handleUploadRecord} disabled={isUploading}>
+                            {isUploading ? 'Đang upload...' : 'Upload Record'}
+                        </Button>
+                        {txStatus && <Text>{txStatus}</Text>}
                     </Flex>
                 </Card>
 
-                {/* Phần thêm buyer */}
+                {/* Phần hiển thị danh sách record */}
                 <Card>
                     <Flex direction="column" gap="3" p="4">
-                        <Heading size="4">Thêm Buyer vào Access List</Heading>
-                        <TextField.Input
-                            placeholder="Record ID"
-                            value={recordId}
-                            onChange={(e) => setRecordId(e.target.value)}
-                        />
-                        <TextField.Input
-                            placeholder="Địa chỉ Buyer"
-                            value={newBuyerAddress}
-                            onChange={(e) => setNewBuyerAddress(e.target.value)}
-                        />
-                        <Button onClick={handleAddToAccessList}>Thêm Buyer</Button>
+                        <Heading size="4">Danh sách Record</Heading>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <thead>
+                                <tr>
+                                    <th style={{ border: '1px solid #ddd', padding: '8px' }}>Blob ID</th>
+                                    <th style={{ border: '1px solid #ddd', padding: '8px' }}>Metadata</th>
+                                    <th style={{ border: '1px solid #ddd', padding: '8px' }}>Hash</th>
+                                    <th style={{ border: '1px solid #ddd', padding: '8px' }}>Timestamp</th>
+                                    <th style={{ border: '1px solid #ddd', padding: '8px' }}>File Type</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {records.map((record, index) => (
+                                    <tr key={index}>
+                                        <td style={{ border: '1px solid #ddd', padding: '8px' }}>{record.blobId}</td>
+                                        <td style={{ border: '1px solid #ddd', padding: '8px' }}>{record.metadata}</td>
+                                        <td style={{ border: '1px solid #ddd', padding: '8px' }}>{record.hash}</td>
+                                        <td style={{ border: '1px solid #ddd', padding: '8px' }}>{new Date(record.timestamp).toLocaleString()}</td>
+                                        <td style={{ border: '1px solid #ddd', padding: '8px' }}>{record.fileType}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </Flex>
                 </Card>
-
-                {/* Phần yêu cầu truy cập */}
-                <Card>
-                    <Flex direction="column" gap="3" p="4">
-                        <Heading size="4">Yêu cầu Truy Cập</Heading>
-                        <TextField.Input
-                            placeholder="Record ID"
-                            value={recordId}
-                            onChange={(e) => setRecordId(e.target.value)}
-                        />
-                        <TextField.Input
-                            placeholder="Public Key của Buyer (phân tách bằng dấu phẩy)"
-                            value={buyerPublicKey}
-                            onChange={(e) => setBuyerPublicKey(e.target.value)}
-                        />
-                        <Button onClick={handleRequestAccess}>Yêu cầu Truy Cập</Button>
-                    </Flex>
-                </Card>
-
-                {/* Hiển thị trạng thái giao dịch */}
-                {txStatus && (
-                    <Card>
-                        <Text>{txStatus}</Text>
-                    </Card>
-                )}
             </Flex>
         </Container>
     );
 }
 
 function App() {
+    console.log('Rendering App');
     return (
         <Container>
             <Flex position="sticky" px="4" py="2" justify="between" align="center">
