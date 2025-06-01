@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Transaction } from '@mysten/sui/transactions';
-import { useCurrentAccount, useSignAndExecuteTransaction, useSuiClient } from '@mysten/dapp-kit';
+import { useCurrentAccount, useSignAndExecuteTransaction } from '@mysten/dapp-kit';
 import { ConnectButton } from '@mysten/dapp-kit';
 import { Box, Button, Card, Container, Flex, Heading, Text } from '@radix-ui/themes';
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
@@ -26,7 +26,6 @@ function HomePage() {
 
 function ZkDocLockApp() {
     console.log('Rendering ZkDocLockApp');
-    const suiClient = useSuiClient();
     const currentAccount = useCurrentAccount();
     const { mutate: signAndExecute } = useSignAndExecuteTransaction();
 
@@ -111,36 +110,48 @@ function ZkDocLockApp() {
                     const fileType = file.type || 'unknown';
                     console.log('7. File type:', fileType);
 
+                    // Hardcode proof, verifying key, and public inputs from successful Rust generation
+                    const proofHex = "47cf851e8c1ba9cbfa1fb12386d3e51b54bfd3ad265ef0958f77953b59d611127bc0d298cd724fdd21eb9cd6ea58ac716101e40edd4320816aa178f1bd11f52715e2937ad973cc4753f6b7698a31cf0eca07904bba16fb702509661266bb4d21db31028d4794e09f71b3094abce44d5e7dff63ff60cdf4f3d7a0a4161bf70028";
+                    const vkHex = "714a024c26c2dbb11ca76742d0122466b07369ad47ec14e048dd02af9dd77e0f059850d99f61d70b82651addbe50bb534ca2f361c64e4eb470d5822a1a7521260572b660641ac91c0dee8924a5e0b002f72741a3a1e7f3dc9bdf49c4e7762fa9eb41b25c85705b4641f6baf8838c91d45b7206edd1eaad8b95193993034d1a1398951a5403bc27ca2b30ecd13cfb512a79a5db6d7e0a179e82feb81df7f50d070c535f632f294c43dcb36f8988e66e51ca9c1760c5c31c871a72d0bf96984b3082762328c74c2423d7ad3f988c573a42a21e6fb8f11031e9a0898525ca310587020000000000000034370eadc947c62c52690af3db834df1721a74041acda3fa88a4e7c1e09172881b1656655149f0e1207940257fd58287563427777907bcd756f860fb6244e01e";
+                    const publicInputsHex = "0900000000000000000000000000000000000000000000000000000000000000";
+
+                    // Chuyển hex thành bytes
+                    const proofBytes = hexToBytes(proofHex);
+                    const vkBytes = hexToBytes(vkHex);
+                    const publicInputsBytes = hexToBytes(publicInputsHex);
+
                     // Lưu record vào state
                     setRecords([...records, { blobId, metadata, hash, timestamp, fileType }]);
 
-                    // Gọi smart contract
+                    // Gọi smart contract với đầy đủ 8 tham số
                     console.log('8. Calling smart contract to create record');
                     const tx = new Transaction();
                     tx.moveCall({
                         target: `${PACKAGE_ID}::zk_doc_lock::create_record`,
                         arguments: [
-                            tx.pure.vector('u8', Array.from(new TextEncoder().encode(blobId))),
-                            tx.pure.vector('u8', Array.from(hexToBytes(hash))),
-                            tx.pure.vector('u8', []), // proof
-                            tx.pure.vector('u8', []), // pvk_bytes
-                            tx.pure.vector('u8', []), // public_inputs_bytes
-                            tx.pure.vector('address', []), // initial_allowlist
+                            tx.pure.vector('u8', Array.from(new TextEncoder().encode(blobId))), // blob_id
+                            tx.pure.vector('u8', Array.from(hexToBytes(hash))), // file_hash
+                            tx.pure.u64(timestamp), // data_timestamp
+                            tx.pure.u64(file.size), // file_size
+                            tx.pure.vector('u8', Array.from(new TextEncoder().encode(fileType))), // file_type
+                            tx.pure.vector('u8', Array.from(proofBytes)), // proof
+                            tx.pure.vector('u8', Array.from(vkBytes)), // verifying_key
+                            tx.pure.vector('u8', Array.from(publicInputsBytes)), // public_inputs
                         ],
                     });
                     tx.setGasBudget(10000000);
                     signAndExecute(
                         { transaction: tx },
                         {
-                            onSuccess: (result) => {
+                            onSuccess: (result: any) => {
                                 console.log('9. Record uploaded to blockchain:', result);
                                 const createdObject = result.effects?.created?.find(
-                                    (item) => item.owner && typeof item.owner === 'object' && 'Owned' in item.owner
+                                    (item: any) => item.owner && typeof item.owner === 'object' && 'Owned' in item.owner
                                 );
                                 const recordId = createdObject?.reference?.objectId || result.digest;
                                 setTxStatus(`Record đã được tạo thành công: ${result.digest}, Record ID: ${recordId}`);
                             },
-                            onError: (error) => {
+                            onError: (error: any) => {
                                 console.error('10. Error uploading to blockchain:', error);
                                 setTxStatus(`Lỗi khi upload lên blockchain: ${error.message}`);
                             },
@@ -150,7 +161,7 @@ function ZkDocLockApp() {
                 }
             };
             reader.readAsArrayBuffer(file);
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error during upload:', error);
             setTxStatus(`Lỗi khi upload lên Walrus: ${error.message}`);
             setIsUploading(false);

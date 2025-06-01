@@ -4,6 +4,7 @@ use ark_groth16::{Groth16, ProvingKey, VerifyingKey, Proof};
 use ark_std::rand::thread_rng;
 use ark_snark::SNARK;
 use ark_serialize::CanonicalSerialize;
+use ark_ff::PrimeField;
 use num_bigint::BigInt;
 use std::path::{Path, PathBuf};
 use std::fs;
@@ -121,9 +122,9 @@ fn find_circom_files() -> Result<(PathBuf, PathBuf), Box<dyn std::error::Error>>
 }
 
 async fn run_zkproof() -> Result<(), Box<dyn std::error::Error>> {
-    // Hardcoded file paths
-    let wasm_path = r"C:\Users\pkhoa\projects\Sui\zkdoclock\zkdoclock-app\src\zkproof\src\main_js\main.wasm";
-    let r1cs_path = r"C:\Users\pkhoa\projects\Sui\zkdoclock\zkdoclock-app\src\zkproof\src\main.r1cs";
+    // Updated file paths for the compiled circuit
+    let wasm_path = r"C:\Users\pkhoa\projects\Sui\zkdoclock\zkdoclock-app\src\zkproof\src\main_c_js\main_c.wasm";
+    let r1cs_path = r"C:\Users\pkhoa\projects\Sui\zkdoclock\zkdoclock-app\src\zkproof\src\main_c.r1cs";
 
     // Check if files exist
     if !Path::new(wasm_path).exists() {
@@ -146,7 +147,9 @@ async fn run_zkproof() -> Result<(), Box<dyn std::error::Error>> {
     println!("CircomConfig created, building circuit...");
     
     let mut builder = CircomBuilder::new(cfg);
-    builder.push_input("step_in", BigInt::from(3));
+    // The circuit has inputs 'a' and 'b', and output 'c' where c = a * b
+    builder.push_input("a", BigInt::from(3));
+    builder.push_input("b", BigInt::from(3));
     
     let circom = builder.build()
         .map_err(|e| format!("Failed to build circuit: {}", e))?;
@@ -182,10 +185,65 @@ async fn run_zkproof() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| format!("Failed to serialize proof: {}", e))?;
     let proof_hex = hex::encode(&proof_bytes);
     
-    let mut public_inputs_bytes = Vec::new();
-    public_inputs.serialize_compressed(&mut public_inputs_bytes)
-        .map_err(|e| format!("Failed to serialize public inputs: {}", e))?;
-    let public_inputs_hex = hex::encode(&public_inputs_bytes);
+    // For public inputs, format as single 32-byte hex string for Sui compatibility
+    // The public inputs should be the output values of the circuit
+    if public_inputs.is_empty() {
+        return Err("No public inputs generated".into());
+    }
+    
+    // Take the first (and likely only) public input and format it as 32 bytes
+    let first_input = &public_inputs[0];
+    let mut input_bytes = [0u8; 32];
+    let bigint = first_input.into_bigint();
+    
+    // Convert to little-endian bytes (32 bytes for BN254 field element)
+    for i in 0..4 {
+        let limb = bigint.0[i];
+        for j in 0..8 {
+            input_bytes[i * 8 + j] = ((limb >> (j * 8)) & 0xff) as u8;
+        }
+    }
+    
+    // Convert to hex string (should be exactly 64 hex characters)
+    let public_inputs_sui_format = hex::encode(&input_bytes);
+    
+    // Additional formats for debugging
+    let mut public_inputs_compressed = Vec::new();
+    public_inputs.serialize_compressed(&mut public_inputs_compressed)
+        .map_err(|e| format!("Failed to serialize public inputs compressed: {}", e))?;
+    let public_inputs_compressed_hex = hex::encode(&public_inputs_compressed);
+    
+    // Try uncompressed serialization
+    let mut public_inputs_uncompressed = Vec::new();
+    public_inputs.serialize_uncompressed(&mut public_inputs_uncompressed)
+        .map_err(|e| format!("Failed to serialize public inputs uncompressed: {}", e))?;
+    let public_inputs_uncompressed_hex = hex::encode(&public_inputs_uncompressed);
+    
+    // Serialize each field element individually (32 bytes each for BN254)
+    let mut public_inputs_individual = Vec::new();
+    for input in &public_inputs {
+        let mut input_bytes = Vec::new();
+        input.serialize_uncompressed(&mut input_bytes)
+            .map_err(|e| format!("Failed to serialize individual input: {}", e))?;
+        public_inputs_individual.extend_from_slice(&input_bytes);
+    }
+    let public_inputs_individual_hex = hex::encode(&public_inputs_individual);
+    
+    // Alternative: Raw field element bytes (32 bytes each, little-endian) - for all inputs
+    let mut public_inputs_raw = Vec::new();
+    for input in &public_inputs {
+        let mut bytes = [0u8; 32];
+        let bigint = input.into_bigint();
+        // Convert to little-endian bytes
+        for i in 0..4 {
+            let limb = bigint.0[i];
+            for j in 0..8 {
+                bytes[i * 8 + j] = ((limb >> (j * 8)) & 0xff) as u8;
+            }
+        }
+        public_inputs_raw.extend_from_slice(&bytes);
+    }
+    let public_inputs_raw_hex = hex::encode(&public_inputs_raw);
     
     let mut vk_bytes = Vec::new();
     vk.serialize_compressed(&mut vk_bytes)
@@ -194,11 +252,25 @@ async fn run_zkproof() -> Result<(), Box<dyn std::error::Error>> {
     
     if verified {
         println!("✅ Proof verified successfully!");
-        println!("Input: 3, Output: 9 (3²)");
+        println!("Input: a=3, b=3, Output: c=9 (3×3)");
         println!();
+        println!("=== SUI MOVE FORMAT (USE THIS) ===");
         println!("Proof (hex): {}", proof_hex);
-        println!("Public inputs (hex): {}", public_inputs_hex);
         println!("Verifying key (hex): {}", vk_hex);
+        println!("Public inputs (32-byte format): {}", public_inputs_sui_format);
+        println!("Public inputs length: {} chars ({} bytes)", public_inputs_sui_format.len(), public_inputs_sui_format.len() / 2);
+        println!();
+        println!("=== OTHER FORMATS FOR DEBUG ===");
+        println!("Public inputs (compressed): {}", public_inputs_compressed_hex);
+        println!("Public inputs (uncompressed): {}", public_inputs_uncompressed_hex);
+        println!("Public inputs (individual): {}", public_inputs_individual_hex);
+        println!("Public inputs (raw all): {}", public_inputs_raw_hex);
+        println!();
+        println!("=== DEBUG INFO ===");
+        println!("Number of public inputs: {}", public_inputs.len());
+        for (i, input) in public_inputs.iter().enumerate() {
+            println!("Public input {}: {:?}", i, input);
+        }
     } else {
         println!("❌ Proof verification failed!");
     }

@@ -1,6 +1,10 @@
+pragma circom 2.1.5;
+
 template Main() {
-    signal input step_in;
-    signal output out;
-    out <== step_in * step_in;
+    signal input a;
+    signal input b;
+    signal output c;
+
+    c <== a * b;
 }
 component main = Main();
