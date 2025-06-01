@@ -5,10 +5,10 @@ import { getFullnodeUrl } from '@mysten/sui/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
 
-// Khởi tạo QueryClient cho React Query
+// Initialize QueryClient for React Query
 const queryClient = new QueryClient();
 
-// Cấu hình mạng Sui
+// Configure Sui network
 const networks = {
   devnet: { url: getFullnodeUrl('devnet') },
   testnet: { url: getFullnodeUrl('testnet') },

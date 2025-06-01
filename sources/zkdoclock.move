@@ -16,7 +16,7 @@ module zkdoclock::zk_doc_lock {
     public struct Record has key, store {
         id: object::UID,
         blob_id: vector<u8>,        // ID of encrypted data on Walrus
-        file_hash: vector<u8>,      // Hash of the original document (SHA-256)
+        file_hash: vector<u8>,      // Hash of the original document (SHA-256) as hex string
         data_timestamp: u64,        // Timestamp of the data creation
         upload_timestamp: u64,      // Timestamp when uploaded to blockchain
         seller: address,            // Address of the seller
@@ -29,7 +29,7 @@ module zkdoclock::zk_doc_lock {
     // Event emitted when a new record is created
     public struct RecordCreated has copy, drop {
         record_id: object::ID,
-        file_hash: vector<u8>,
+        file_hash: vector<u8>,      // Hash as hex string
         data_timestamp: u64,
         upload_timestamp: u64,
         seller: address,

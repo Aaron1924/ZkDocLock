@@ -14,10 +14,10 @@ function HomePage() {
             <Flex direction="column" gap="3" align="center" p="4">
                 <Heading size="5">ZkDocLock</Heading>
                 <Text align="center">
-                    Ứng dụng demo cho ZkDocLock, cho phép seller upload dữ liệu lên Walrus và lưu metadata trên blockchain.
+                    Demo application for ZkDocLock, allows sellers to upload data to Walrus and store metadata on blockchain.
                 </Text>
                 <Link to="/zkdoclock">
-                    <Button size="3">Thử ngay</Button>
+                    <Button size="3">Try Now</Button>
                 </Link>
             </Flex>
         </Card>
@@ -29,7 +29,7 @@ function ZkDocLockApp() {
     const currentAccount = useCurrentAccount();
     const { mutate: signAndExecute } = useSignAndExecuteTransaction();
 
-    // State cho việc upload record
+    // State for uploading record
     const [file, setFile] = useState<File | null>(null);
     const [metadata, setMetadata] = useState('');
     const [isUploading, setIsUploading] = useState(false);
@@ -45,7 +45,7 @@ function ZkDocLockApp() {
     if (!currentAccount) {
         return (
             <Flex justify="center" p="4">
-                <Text>Vui lòng kết nối ví để tiếp tục</Text>
+                <Text>Please connect wallet to continue</Text>
             </Flex>
         );
     }
@@ -59,7 +59,7 @@ function ZkDocLockApp() {
             }
             const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
             if (!allowedTypes.includes(selectedFile.type)) {
-                alert('Chỉ hỗ trợ file ảnh (JPEG, PNG) hoặc PDF');
+                alert('Only support image files (JPEG, PNG) or PDF');
                 return;
             }
             setFile(selectedFile);
@@ -68,7 +68,7 @@ function ZkDocLockApp() {
 
     const handleUploadRecord = async () => {
         if (!file || !metadata) {
-            alert('Vui lòng chọn file và nhập metadata');
+            alert('Please select file and enter metadata');
             return;
         }
         setIsUploading(true);
@@ -79,11 +79,11 @@ function ZkDocLockApp() {
                     console.log('1. File read successfully');
                     const data = new Uint8Array(event.target.result);
 
-                    // Tính hash của dữ liệu
+                    // Calculate hash of data
                     const hash = CryptoJS.SHA256(CryptoJS.lib.WordArray.create(data)).toString();
                     console.log('2. Hash calculated:', hash);
 
-                    // Upload lên Walrus
+                    // Upload to Walrus
                     console.log('3. Starting upload to Walrus');
                     const response = await fetch('https://publisher.walrus-testnet.walrus.space/v1/blobs?epochs=1', {
                         method: 'PUT',
@@ -105,7 +105,7 @@ function ZkDocLockApp() {
                     }
                     console.log('6. blobId:', blobId);
 
-                    // Lấy timestamp và fileType
+                    // Get timestamp and fileType
                     const timestamp = Date.now();
                     const fileType = file.type || 'unknown';
                     console.log('7. File type:', fileType);
@@ -115,22 +115,22 @@ function ZkDocLockApp() {
                     const vkHex = "714a024c26c2dbb11ca76742d0122466b07369ad47ec14e048dd02af9dd77e0f059850d99f61d70b82651addbe50bb534ca2f361c64e4eb470d5822a1a7521260572b660641ac91c0dee8924a5e0b002f72741a3a1e7f3dc9bdf49c4e7762fa9eb41b25c85705b4641f6baf8838c91d45b7206edd1eaad8b95193993034d1a1398951a5403bc27ca2b30ecd13cfb512a79a5db6d7e0a179e82feb81df7f50d070c535f632f294c43dcb36f8988e66e51ca9c1760c5c31c871a72d0bf96984b3082762328c74c2423d7ad3f988c573a42a21e6fb8f11031e9a0898525ca310587020000000000000034370eadc947c62c52690af3db834df1721a74041acda3fa88a4e7c1e09172881b1656655149f0e1207940257fd58287563427777907bcd756f860fb6244e01e";
                     const publicInputsHex = "0900000000000000000000000000000000000000000000000000000000000000";
 
-                    // Chuyển hex thành bytes
+                    // Convert hex to bytes
                     const proofBytes = hexToBytes(proofHex);
                     const vkBytes = hexToBytes(vkHex);
                     const publicInputsBytes = hexToBytes(publicInputsHex);
 
-                    // Lưu record vào state
+                    // Save record to state
                     setRecords([...records, { blobId, metadata, hash, timestamp, fileType }]);
 
-                    // Gọi smart contract với đầy đủ 8 tham số
+                    // Call smart contract with full 8 parameters
                     console.log('8. Calling smart contract to create record');
                     const tx = new Transaction();
                     tx.moveCall({
                         target: `${PACKAGE_ID}::zk_doc_lock::create_record`,
                         arguments: [
                             tx.pure.vector('u8', Array.from(new TextEncoder().encode(blobId))), // blob_id
-                            tx.pure.vector('u8', Array.from(hexToBytes(hash))), // file_hash
+                            tx.pure.vector('u8', Array.from(new TextEncoder().encode(hash))), // file_hash as hex string
                             tx.pure.u64(timestamp), // data_timestamp
                             tx.pure.u64(file.size), // file_size
                             tx.pure.vector('u8', Array.from(new TextEncoder().encode(fileType))), // file_type
@@ -149,11 +149,11 @@ function ZkDocLockApp() {
                                     (item: any) => item.owner && typeof item.owner === 'object' && 'Owned' in item.owner
                                 );
                                 const recordId = createdObject?.reference?.objectId || result.digest;
-                                setTxStatus(`Record đã được tạo thành công: ${result.digest}, Record ID: ${recordId}`);
+                                setTxStatus(`Record created successfully: ${result.digest}, Record ID: ${recordId}`);
                             },
                             onError: (error: any) => {
                                 console.error('10. Error uploading to blockchain:', error);
-                                setTxStatus(`Lỗi khi upload lên blockchain: ${error.message}`);
+                                setTxStatus(`Error uploading to blockchain: ${error.message}`);
                             },
                         }
                     );
@@ -163,12 +163,12 @@ function ZkDocLockApp() {
             reader.readAsArrayBuffer(file);
         } catch (error: any) {
             console.error('Error during upload:', error);
-            setTxStatus(`Lỗi khi upload lên Walrus: ${error.message}`);
+            setTxStatus(`Error uploading to Walrus: ${error.message}`);
             setIsUploading(false);
         }
     };
 
-    // Hàm chuyển hex string thành bytes
+    // Function to convert hex string to bytes
     function hexToBytes(hex: string): Uint8Array {
         const bytes = new Uint8Array(hex.length / 2);
         for (let i = 0; i < hex.length; i += 2) {
@@ -180,28 +180,28 @@ function ZkDocLockApp() {
     return (
         <Container size="3" p="4">
             <Flex direction="column" gap="4">
-                {/* Phần upload record */}
+                {/* Upload record section */}
                 <Card>
                     <Flex direction="column" gap="3" p="4">
                         <Heading size="4">Upload Record</Heading>
                         <input type="file" onChange={handleFileChange} accept="image/jpeg,image/png,application/pdf" />
                         <input
-                            placeholder="Metadata (miêu tả dữ liệu)"
+                            placeholder="Metadata (describe data)"
                             value={metadata}
                             onChange={(e) => setMetadata(e.target.value)}
                             style={{ padding: '8px', margin: '4px 0' }}
                         />
                         <Button onClick={handleUploadRecord} disabled={isUploading}>
-                            {isUploading ? 'Đang upload...' : 'Upload Record'}
+                            {isUploading ? 'Uploading...' : 'Upload Record'}
                         </Button>
                         {txStatus && <Text>{txStatus}</Text>}
                     </Flex>
                 </Card>
 
-                {/* Phần hiển thị danh sách record */}
+                {/* Records list section */}
                 <Card>
                     <Flex direction="column" gap="3" p="4">
-                        <Heading size="4">Danh sách Record</Heading>
+                        <Heading size="4">Record List</Heading>
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                             <thead>
                                 <tr>
