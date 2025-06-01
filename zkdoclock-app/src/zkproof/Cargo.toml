@@ -13,3 +13,4 @@ rand = "0.9.1"
 hex = "0.4.3"
 ark-std = "0.5.0"
 num-bigint = "0.4"
+tokio = { version = "1.35", features = ["full", "rt-multi-thread"] }

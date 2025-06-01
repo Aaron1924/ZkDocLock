@@ -1,3 +1,36 @@
 build/*
 zkdoclock-app/node_modules/*
 
+# Rust build artifacts
+target/
+**/target/
+
+# Cargo lock file (optional - you may want to keep this for applications)
+# Cargo.lock
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Node modules (if you have any JS/TS components)
+node_modules/
+
+# Circom build artifacts
+*.r1cs
+*.wasm
+*.sym
+*.wtns
+
+# Log files
+*.log
